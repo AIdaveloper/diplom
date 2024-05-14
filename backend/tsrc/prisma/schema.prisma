@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// schema.prisma
+
+// Модель пользователя
+model User {
+  id         Int      @id @default(autoincrement())
+  account_id Int
+  name       String
+  email      String   @unique
+  password   String
+  role       Role     @default(USER)
+
+  refreshTokens RefreshToken[] @relation("TokenUsers")
+  ownerof    Account? @relation("AccountOwner")   // Сделаем связь опциональной
+  account    Account  @relation("AccountUsers", fields: [account_id], references: [id])
+}
+
+model RefreshToken {
+  id          String   @id @unique @default(uuid())
+  hashedToken String
+  user_id     Int
+  User        User     @relation("TokenUsers", fields: [user_id], references: [id], onDelete: Cascade)
+  revoked     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+// Модель аккаунта
+model Account {
+  id                Int      @id @default(autoincrement())
+  owner_id          Int?     @unique
+  sub               Boolean  @default(false)
+  organisation_name String   @default("unknown")
+
+  owner              User?   @relation("AccountOwner", fields: [owner_id], references: [id]) // Сделаем связь опциональной
+  users              User[]  @relation("AccountUsers")
+  bot                Bot?
+  clients            Client[]
+  categories         Category[]
+  products           Product[]
+  deliveries         Delivery[]
+
+  // @@index([owner_id], name: "account_owner_id_index")
+}
+
+enum Role {
+  USER
+}
+
+// Модель бота
+model Bot {
+  id         Int      @id @default(autoincrement())
+  account_id Int      @unique()
+  token      String?
+  scenario   Json     @default("{\"1\":{\"type\":\"msg\",\"text\":\"welcome\",\"next\":2},\"2\":{\"type\":\"btns\",\"text\":\"menu\",\"btns\":{\"btns\":{\"reply_markup\":{\"keyboard\":[[{\"text\":\"Start\"},{\"text\":\"menu\"}],[{\"text\":\"Menu\",\"web_app\":{\"url\":\"https://mcn-dev.zoup.online/clients/\"}}]]}},\"ref\":{\"Start\":\"1\",\"menu\":\"2\"}}}}")
+  
+  account    Account  @relation(fields: [account_id], references: [id])
+  clients    Client[]
+  messages   Message[]
+}
+
+// Модель клиента
+model Client {
+  id            Int      @id @default(autoincrement())
+  account_id    Int
+  bot_id        Int
+  telegram_id   Int
+  name          String?
+  email         String?
+  number        String?
+  position      String?
+  // card          Json     @default({cardnumber: 0, cvv: 0, owner: "", end_date: ""})
+  card          Json     @default("{}")
+
+  account       Account  @relation(fields: [account_id], references: [id])
+  bot           Bot      @relation(fields: [bot_id], references: [id])
+
+  messages      Message[]
+  basket        Basket[]
+  orders        Order[]
+  @@unique([account_id, telegram_id])
+}
+
+// Модель сообщения
+model Message {
+  id         Int      @id @default(autoincrement())
+  client_id  Int
+  bot_id     Int
+  data       Json
+  sender     Sender
+
+  client     Client @relation(fields: [client_id], references: [id])
+  bot        Bot    @relation(fields: [bot_id], references: [id])
+}
+
+enum Sender {
+  BOT
+  USER
+}
+
+// Модель категории
+model Category {
+  id         Int      @id @default(autoincrement())
+  account_id Int
+  name       String
+
+  account    Account  @relation(fields: [account_id], references: [id])
+  products Product[]
+}
+
+// Модель продукта
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String
+  weight      Int?
+  count       Int      @default(0)
+  account_id  Int
+  category_id Int
+  image_link  String?   
+  price       Int?
+
+  account     Account   @relation(fields: [account_id], references: [id])
+  category    Category  @relation(fields: [category_id], references: [id])
+
+  basket    Basket[]
+  orderProducts OrderProducts[]
+}
+
+// Модель корзины
+model Basket {
+  id          Int      @id @default(autoincrement())
+  client_id  Int
+  product_id Int
+  count   Int
+
+  client     Client   @relation(fields: [client_id], references: [id])
+  product    Product  @relation(fields: [product_id], references: [id])
+}
+
+// Модель доставки
+model Delivery {
+  id         Int      @id @default(autoincrement())
+  name       String
+  account_id Int
+
+  account    Account  @relation(fields: [account_id], references: [id])
+
+  orders      Order[]
+}
+
+// Модель заказа
+model Order {
+  id           Int      @id @default(autoincrement())
+  client_id    Int
+  delivery_id  Int?
+  date         DateTime?
+  address      String?
+  status       OrderStatus @default(prepare)
+
+  client       Client    @relation(fields: [client_id], references: [id])
+  delivery     Delivery?  @relation(fields: [delivery_id], references: [id])
+
+  orderProducts OrderProducts[]
+}
+
+enum OrderStatus {
+  prepare
+  cooking
+  wating
+  delivery
+  delivered
+}
+
+// Модель продуктов в заказе
+model OrderProducts {
+  id            Int      @id @default(autoincrement())
+  order_id      Int
+  product_id    Int
+  product_count Int
+
+  order         Order   @relation(fields: [order_id], references: [id])
+  product       Product @relation(fields: [product_id], references: [id])
+}
